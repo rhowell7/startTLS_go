@@ -7,10 +7,42 @@ import (
     "bufio"
     "golang.org/x/net/ipv4"
     // go get -u golang.org/x/net/ipv4
+    "os"
+    "log"
+    // "reflect"
 )
 
 func main() {
-    // TODO: get the next IP address from a global queue
+    //------------------- Build the queue of IP Addresses --------------------//
+    file, err := os.Open("ipAddresses.txt")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer file.Close()
+
+    ipAddresses := make(chan string)
+    scanner := bufio.NewScanner(file)
+    for scanner.Scan() {
+        // fmt.Println(scanner.Text())
+        tmp := string(scanner.Text())
+        fmt.Println(tmp)
+        // fmt.Println(reflect.TypeOf(tmp))
+        // ipAddresses <- tmp
+        // fmt.Println("read one IP")
+    }
+    close(ipAddresses)
+
+    if err := scanner.Err(); err != nil {
+        log.Fatal(err)
+    }
+
+    // fmt.Println("scanner read in ip addresses:\n")
+    // for i := 0; i < len(ipAddresses); i++ {
+    //     fmt.Println(<-ipAddresses)
+    // }
+
+
+    // TODO: get the next IP address from a global queue ---------------------//
     target := "mail.rchowell.net:25"
     minTTL := 10
     maxTTL := 15
@@ -22,6 +54,7 @@ func main() {
         fmt.Println("dial error:", err)
         return
     }
+    defer conn.Close()
     
     // Wait for 220 banner
     banner, err := bufio.NewReader(conn).ReadString('\n')
@@ -49,6 +82,11 @@ func main() {
     //--------------------- Send magic StartTLS packets ----------------------//
     // Make a new ipv4 connection from the original one
     startTlsConn := ipv4.NewConn(conn)
+    if err != nil {
+        fmt.Println("Forking conn error:", err)
+        return
+    }
+    defer startTlsConn.Close()
 
     // Send the fudged StartTLS packets
     ttl := minTTL
@@ -64,6 +102,6 @@ func main() {
     time.Sleep(2 * time.Second)
     defer fmt.Println("Closing Connection")
     startTlsConn.SetTTL(60)
-    defer conn.Close()
-    defer startTlsConn.Close()
+    // defer conn.Close()
+    // defer startTlsConn.Close()
 }
