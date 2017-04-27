@@ -1,0 +1,110 @@
+package main
+
+// type ICMPPacket {
+//     TargetIPv4 uint32
+//     ReachedIPv4 uint32
+//     Data []byte
+// }
+
+// func ParseICMP(buf []byte) ICMPPacket {
+//     // Parse an ICMP packet
+// }
+
+func placeholder() {
+    workers := 10 // number of threads, should be a flag
+    icmp_socket := makeICMPSocket() // so there's only 1 icmp socket open
+    icmp_chan := make(chan ICMPPacket, workers*2) // and 1 icmp chan for communicating
+        // between the icmp_socket and all the other running threads
+        // why workers*2?
+
+    w := new(sync.WaitGroup) // basically a semaphore? +1 to wait. w.Done to decrement
+        // After w reaches 0, the process can continue. So, shouldn't w.Add(1) be
+        // inside the functions?
+
+    // This function creates a new go routine which creates a chan for 
+    // communicating IP Addresses, and
+    // reads in IP Addresses... from where? a file? command line?
+    input_chan := make(chan string, workers*2)
+    w.Add(1)
+    go func() {
+        defer w.Done()
+        for {
+            // Read input line until end of file
+            ip := readLine()
+            input_chan <- ip
+        }
+        close(input_chan)
+    }()
+
+    w.Add(1)
+    go func() {
+        defer w.Done()
+        // Receive ICMP packets
+        buf := make([]byte, 10000)
+        for {
+            err, n := icmp_socket.Recv(buf)
+            if err == nil {
+                packet := ParseICMP(buf[0:n])
+                icmp_chan <- packet
+                continue
+            }
+            if err == io.EOF {
+                break
+            }
+            if err == io.Timeout {
+                sleep(1)
+                continue
+            }
+            panic(err.Error())
+        }
+        close(icmp_chan)
+    }()
+
+    in_process := make(map[uint32]chan[ICMPPacket])
+    m := new(sync.RWMutex())
+
+    w.Add(1)
+    go func() {
+        // Dispatch packets to scanners
+        defer w.Done()
+        for packet := range icmp_chan {
+            m.Lock()
+            defer m.Unlock()
+            target := packet.TargetIPv4
+            if c, ok := in_process[target]; ok {
+                in_process[target] <- packet
+            }
+        }
+    }()
+
+
+    worker_channels := make([]chan[ICMPPacket], workers)
+    for idx := range worker_channels {
+        worker_channels[idx] = make(chan[ICMPPacket], 1)
+    }
+
+    for worker := 0; worker < workers; worker++ {
+        w.Add(1)
+        c := worker_channels[worker]
+        go func(c chan ICMPPacket) {
+            defer w.Done()
+            for ip := range input_chan {
+                for ttl := 4; ttl < MAX; ttl++ {
+                    conn := net.Dial(ip)
+
+                    // - send packet with modified ttl
+                    // - recv with timeout
+                    // - poll the right channel for this
+                    //   worker to see if an icmp packet
+                    //   arrives
+                    // - see what happens first: icmp,
+                    //   actual data from recv, or timeout on
+                    //   both
+                    // - try the next ttl or mark as done, etc.
+                }
+            }
+            close(c)
+        }(c)
+    }
+    w.Wait()
+}

@@ -1,5 +1,8 @@
 package main
 
+// go build
+// ./smtp
+
 import (
     "net"
     "fmt"
@@ -18,7 +21,7 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    defer file.Close()
+    // defer file.Close()
 
     ipAddresses := make(chan string)
     scanner := bufio.NewScanner(file)
@@ -31,6 +34,7 @@ func main() {
         // fmt.Println("read one IP")
     }
     close(ipAddresses)
+    fmt.Println("Read in IP Addresses\n")
 
     if err := scanner.Err(); err != nil {
         log.Fatal(err)
@@ -54,7 +58,7 @@ func main() {
         fmt.Println("dial error:", err)
         return
     }
-    defer conn.Close()
+    // defer conn.Close()
     
     // Wait for 220 banner
     banner, err := bufio.NewReader(conn).ReadString('\n')
@@ -80,6 +84,11 @@ func main() {
     }
 
     //--------------------- Send magic StartTLS packets ----------------------//
+    // test regular STARTTLS request
+    // conn.Write([]byte("STARTTLS\r\n"))
+    // tlsResponse := bufio.NewReader(conn)
+    // fmt.Println(tlsResponse)
+
     // Make a new ipv4 connection from the original one
     startTlsConn := ipv4.NewConn(conn)
     if err != nil {
@@ -100,8 +109,8 @@ func main() {
 
     //------------------------ Close the connection --------------------------//
     time.Sleep(2 * time.Second)
-    defer fmt.Println("Closing Connection")
+    defer fmt.Println("Closing Connection, test")
     startTlsConn.SetTTL(60)
-    // defer conn.Close()
-    // defer startTlsConn.Close()
+    defer conn.Close()
+    defer startTlsConn.Close()
 }
