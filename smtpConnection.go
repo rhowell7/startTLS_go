@@ -9,10 +9,11 @@ import (
     "fmt"
     "time"
     "bufio"
-    // "golang.org/x/net/ipv4"
+    "golang.org/x/net/ipv4"
     // go get -u golang.org/x/net/ipv4
+    "golang.org/x/net/icmp"
+    "log"
     // "os"
-    // "log"
     // "reflect"
 )
 
@@ -63,8 +64,8 @@ func main() {
     // target := "128.32.78.14:25"
     // target := "131.193.46.40:25" // dial timeout
 
-    // minTTL := 10
-    // maxTTL := 15
+    minTTL := 10
+    maxTTL := 26
 
     //------------------------- Open the connection --------------------------//
     fmt.Println("Attempting connection to: ", target)
@@ -120,73 +121,146 @@ func main() {
             fmt.Println("Sending 'HELO' instead")
             conn.Write([]byte("HELO ME\r\n"))
         }
-    }
+    } // for
 
 
-    // timeoutDuration := 1 * time.Second
-    // bufReader := bufio.NewReader(conn)
-    // for {
-    //     // Set a deadline for reading. Read operation will fail if no data
-    //     // is received after deadline.
-    //     conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+    // //----------------- Test Tegular STARTTLS request ---------------------//
+    // fmt.Println("Sending STARTTLS")
+    // conn.Write([]byte("STARTTLS\r\n"))
+    // tlsResponse, err := bufio.NewReader(conn).ReadBytes('\n')
+    // fmt.Println(string(tlsResponse))
+    // // fmt.Println(err)
 
-    //     // Read tokens delimited by newline
-    //     extensions, err := bufReader.ReadBytes('\n')
-    //     if err != nil {
-    //         fmt.Println()
-    //         break
-    //     }
+    // starttlsGood, err := regexp.MatchString("220 ", string(tlsResponse))
+    // starttlsBad, err := regexp.MatchString("500 ", string(tlsResponse))
 
-    //     fmt.Printf("%s", extensions)
+    // if starttlsGood {
+    //     fmt.Println("This server is good to start TLS: ", target)
+    // } else if starttlsBad {
+    //     fmt.Println("This server is unable to start TLS: ", target)
+    // } else {
+    //     fmt.Println("Response did not contain 220 or 500, trying again")
+    //     conn.Write([]byte("STARTTLS\n"))
+    //     tlsResponse, err = bufio.NewReader(conn).ReadBytes('\n')
+    //     fmt.Println(string(tlsResponse))
     // }
 
+
     //--------------------- Send magic StartTLS packets ----------------------//
-    // test regular STARTTLS request
-    // time.Sleep(10 * time.Millisecond)
-    fmt.Println("Sending STARTTLS")
-    conn.Write([]byte("STARTTLS\r\n"))
-    tlsResponse, err := bufio.NewReader(conn).ReadBytes('\n')
-    fmt.Println(string(tlsResponse))
-    // fmt.Println(err)
+    // Create the ICMP listener
+    icmp_chan := make(chan string)
+    go func() {
+        icmp_conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+        if err != nil {
+            log.Fatal(err)
+        }
 
-    starttlsGood, err := regexp.MatchString("220 ", string(tlsResponse))
-    starttlsBad, err := regexp.MatchString("500 ", string(tlsResponse))
+        //---------------------- Listen for ICMP Packets ---------------------//
+        for {
+            fmt.Println("160")
+            rb := make([]byte, 15000)
+            fmt.Println("161: in ICMP listener")
+            n, peer, err := icmp_conn.ReadFrom(rb)
+            fmt.Println("164")
+            if err != nil {
+                if err, ok := err.(net.Error); ok && err.Timeout() {
+                    fmt.Printf("%v\t*\n", 3)
+                    continue
+                }
+                fmt.Println("170")
+                log.Fatal(err)
+            }
+            fmt.Println("173")
+            rm, err := icmp.ParseMessage(1, rb[:n])
+            fmt.Println("175")
+            if err != nil {
+                fmt.Println("fatal error parsing ICMP message")
+                log.Fatal(err)
+            }
+            fmt.Println("180")
+            switch rm.Type {
+            case ipv4.ICMPTypeTimeExceeded:
+                fmt.Printf("peer: %v\n", peer)
+                body := rm.Body.(*icmp.TimeExceeded)
+                text := string(body.Data)
+                if len(text) > 52 {
+                    fmt.Println("ICMP response: ", string(text[52:]))
+                } else {
+                    fmt.Println("Peer did not include a response :(")
+                }
+                icmp_chan <- "timeout"
+            case ipv4.ICMPTypeEchoReply:
+                icmp_chan <- "echo"
+                names, _ := net.LookupAddr(peer.String())
+                fmt.Println("\t%v %+v \n\t%+v", peer, names, rm)
+                fmt.Println("195: got an echo reply")
+                // return
+            default:
+                // log.Printf("unknown ICMP message: %+v\n", rm)
+                fmt.Println("ICMP response unknown/default/other")
+                icmp_chan <- "unknown"
+            }
 
-    if starttlsGood {
-        fmt.Println("This server is good to start TLS: ", target)
-    } else if starttlsBad {
-        fmt.Println("This server is unable to start TLS: ", target)
-    } else {
-        fmt.Println("Response did not contain 220 or 500, trying again")
-        conn.Write([]byte("STARTTLS\n"))
-        tlsResponse, err = bufio.NewReader(conn).ReadBytes('\n')
-        fmt.Println(string(tlsResponse))
-    }
-
+        }
+    }()
 
 
     // Make a new ipv4 connection from the original one
-    // startTlsConn := ipv4.NewConn(conn)
-    // if err != nil {
-    //     fmt.Println("Forking conn error:", err)
-    //     return
-    // }
-    // defer startTlsConn.Close()
+    startTlsConn := ipv4.NewConn(conn)
+    if err != nil {
+        fmt.Println("Forking conn error:", err)
+        return
+    }
+    defer startTlsConn.Close()
 
-    // // Send the fudged StartTLS packets
-    // ttl := minTTL
-    // for ; ttl < maxTTL; ttl++ {
-    //     startTlsConn.SetTTL(ttl)
-    //     fmt.Fprintf(startTlsConn, "STARTTLS\r\n") // send packet
+    // Send the fudged StartTLS packets
+    ttl := minTTL
+    for ; ttl < maxTTL; ttl++ {
+        startTlsConn.SetTTL(ttl)
+        // fmt.Fprintf(startTlsConn, "STARTTLS\r\n") // send packet
+        startTlsConn.Write([]byte("STARTTLS\r\n"))
+        fmt.Println("\nSent STARTTLS packet with TTL: ", ttl)
 
-    //     // TODO: listen for reply, wait for signal from ICMP listener
-    //     time.Sleep(100 * time.Millisecond)
-    // }
+        // TODO: listen for reply, wait for signal from ICMP listener
+        // time.Sleep(100 * time.Millisecond)
+        fmt.Println("224: waiting for icmp_chan")
+        starttlsResponse := <-icmp_chan
+        fmt.Println("226: got icmp_chan")
+        if starttlsResponse == "timeout" {
+            fmt.Println("TTL too short, loop again")
+        } else if starttlsResponse == "unknown" {
+            fmt.Println("unknown response, loop again")
+        } else if starttlsResponse == "echo" {
+            fmt.Println("echo response, loop again")
+        }else {
+            fmt.Println("listen for the normal STARTTLS response now")
+            tlsResponse, err := bufio.NewReader(conn).ReadBytes('\n')
+            if err != nil {
+                fmt.Println("Error listening for StartTLS response: ", err)
+            }
+            fmt.Println(string(tlsResponse))
+
+            starttlsGood, err := regexp.MatchString("220 ", string(tlsResponse))
+            starttlsBad, err := regexp.MatchString("500 ", string(tlsResponse))
+
+            if starttlsGood {
+                fmt.Println("This server is good to start TLS: ", target)
+            } else if starttlsBad {
+                fmt.Println("This server is unable to start TLS: ", target)
+            } else {
+                fmt.Println("Response did not contain 220 or 500, trying again")
+                // conn.Write([]byte("STARTTLS\n"))
+                // tlsResponse, err = bufio.NewReader(conn).ReadBytes('\n')
+                // fmt.Println(string(tlsResponse))
+            }
+        }
+
+    }
 
     //------------------------ Close the connection --------------------------//
     // time.Sleep(1 * time.Second)
     // defer fmt.Println("Closing Connection, test")
     // startTlsConn.SetTTL(60)
-    // defer conn.Close()
+    // defer conn.Close() // done at the top
     // defer startTlsConn.Close()
 }
