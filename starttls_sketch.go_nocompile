@@ -22,8 +22,7 @@ func placeholder() {
         // inside the functions?
 
     // This function creates a new go routine which creates a chan for 
-    // communicating IP Addresses, and
-    // reads in IP Addresses... from where? a file? command line?
+    // communicating IP Addresses, and reads in IP Addresses
     input_chan := make(chan string, workers*2)
     w.Add(1)
     go func() {
@@ -95,9 +94,9 @@ func placeholder() {
                     // - send packet with modified ttl
                     // - recv with timeout
                     // - poll the right channel for this worker to see if an 
-                    //   icmp packet arrives
+                    //     icmp packet arrives
                     // - see what happens first: icmp, actual data from recv, or
-                    //   timeout on both
+                    //     timeout on both
                     // - try the next ttl or mark as done, etc.
                 }
             }
