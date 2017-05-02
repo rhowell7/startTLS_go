@@ -11,9 +11,9 @@ package main
 // }
 
 func placeholder() {
-    workers := 10 // number of threads, should be a flag
-    icmp_socket := makeICMPSocket() // so there's only 1 icmp socket open
-    icmp_chan := make(chan ICMPPacket, workers*2) // and 1 icmp chan for communicating
+    workers := 10 // number of threads, should be a flag (a flag?)
+    icmp_socket := makeICMPSocket() // so there's only 1 ICMP socket open
+    icmp_chan := make(chan ICMPPacket, workers*2) // and 1 ICMP chan for communicating
         // between the icmp_socket and all the other running threads
         // why workers*2?
 
@@ -94,12 +94,10 @@ func placeholder() {
 
                     // - send packet with modified ttl
                     // - recv with timeout
-                    // - poll the right channel for this
-                    //   worker to see if an icmp packet
-                    //   arrives
-                    // - see what happens first: icmp,
-                    //   actual data from recv, or timeout on
-                    //   both
+                    // - poll the right channel for this worker to see if an 
+                    //   icmp packet arrives
+                    // - see what happens first: icmp, actual data from recv, or
+                    //   timeout on both
                     // - try the next ttl or mark as done, etc.
                 }
             }
