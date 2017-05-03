@@ -1,0 +1,16 @@
+best order for completion?
+
+1. get it working with single thread, single server first
+    need one goroutine for the ICMP listener and one to connect to the server
+    so put all the SMTP-talk into a goroutine? (or, how to group the steps?)
+    *set read timeout
+
+2. create another goroutine to populate the list of IP addresses (input_chan)
+    should pull from a file?
+
+3. create worker threads to pull IPs from the input_chan
+
+
+anything else? will this run on zmap?
+
+
