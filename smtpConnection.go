@@ -24,33 +24,36 @@ func main() {
 
     
     //------------------- Build the queue of IP Addresses --------------------//
-    // file, err := os.Open("ipAddresses.txt")
-    // if err != nil {
-    //     log.Fatal(err)
-    // }
-    // defer file.Close()
+    file, err := os.Open("ipAddresses.txt")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer file.Close() // closes file
 
-    // ipAddresses := make(chan string)
-    // scanner := bufio.NewScanner(file)
+    ipAddresses := make(chan string)
+    scanner := bufio.NewScanner(file)
+    
+    // in a goroutine
     // for scanner.Scan() {
-        // fmt.Println(scanner.Text())
-        // tmp := string(scanner.Text())
-        // fmt.Println(tmp)
-        // fmt.Println(reflect.TypeOf(tmp))
-        // ipAddresses <- tmp
-        // fmt.Println("read one IP")
+    //     fmt.Println(scanner.Text())
+    //     tmp := string(scanner.Text())
+    //     fmt.Println(tmp)
+    //     fmt.Println(reflect.TypeOf(tmp))
+    //     ipAddresses <- tmp
+    //     fmt.Println("read one IP")
     // }
-    // close(ipAddresses)
-    // fmt.Println("Read in IP Addresses\n")
+    // close(ipAddresses) // closes chan (for range() will stop when this chan closes)
+    
+    fmt.Println("Done reading in IP Addresses\n")
 
-    // if err := scanner.Err(); err != nil {
-    //     log.Fatal(err)
-    // }
+    if err := scanner.Err(); err != nil {
+        log.Fatal(err)
+    }
 
-    // fmt.Println("scanner read in ip addresses:\n")
-    // for i := 0; i < len(ipAddresses); i++ {
-    //     fmt.Println(<-ipAddresses)
-    // }
+    fmt.Println("scanner read in ip addresses:\n")
+    for i := 0; i < len(ipAddresses); i++ {
+        fmt.Println(<-ipAddresses)
+    }
 
 
     // -------TODO: get the next IP address from a global queue ---------------------//
@@ -146,16 +149,13 @@ func main() {
     // }
 
 
-    //--------------------- Send magic StartTLS packets ----------------------//
-    // Create the ICMP listener
+    //----------------------- Create the ICMP Listener -----------------------//
     icmp_chan := make(chan string)
     go func() {
         icmp_conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
         if err != nil {
             log.Fatal(err)
         }
-
-        //---------------------- Listen for ICMP Packets ---------------------//
         for {
             fmt.Println("160")
             rb := make([]byte, 15000)
@@ -188,23 +188,22 @@ func main() {
                 } else {
                     fmt.Println("Peer did not include a response :(")
                 }
-                icmp_chan <- "timeout"
+                icmp_chan <- "ttl_expired"
             case ipv4.ICMPTypeEchoReply:
                 icmp_chan <- "echo"
                 names, _ := net.LookupAddr(peer.String())
                 fmt.Println("\t%v %+v \n\t%+v", peer, names, rm)
                 fmt.Println("195: got an echo reply")
-                // return
+                // return // kill this goroutine, & defer'd still runs
             default:
                 // log.Printf("unknown ICMP message: %+v\n", rm)
                 fmt.Println("ICMP response unknown/default/other")
                 icmp_chan <- "unknown"
             }
-
         }
     }()
 
-
+    //--------------------- Send magic StartTLS packets ----------------------//
     // Make a new ipv4 connection from the original one
     startTlsConn := ipv4.NewConn(conn)
     if err != nil {
@@ -226,8 +225,8 @@ func main() {
         fmt.Println("224: waiting for icmp_chan")
         starttlsResponse := <-icmp_chan
         fmt.Println("226: got icmp_chan")
-        if starttlsResponse == "timeout" {
-            fmt.Println("TTL too short, loop again")
+        if starttlsResponse == "ttl_expired" {
+            fmt.Println("TTL expired, loop again")
         } else if starttlsResponse == "unknown" {
             fmt.Println("unknown response, loop again")
         } else if starttlsResponse == "echo" {
