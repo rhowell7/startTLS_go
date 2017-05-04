@@ -26,7 +26,7 @@ func placeholder() {
     // communicating IP Addresses, and reads in IP Addresses
     input_chan := make(chan string, workers*2)
     w.Add(1)
-    go func() {
+    go func() { // Input IP addresses from file into input_chan
         defer w.Done()
         for {
             // Read input line until end of file
@@ -39,7 +39,7 @@ func placeholder() {
     }()
 
     w.Add(1)
-    go func() {
+    go func() { // ICMP Listener
         defer w.Done()
         // Receive ICMP packets
         buf := make([]byte, 10000)
@@ -61,7 +61,7 @@ func placeholder() {
                 // do defer'd commands still run? probably not
         }
         close(icmp_chan)
-    }() // () means run this now
+    }() // () means run this now // ICMP Listener
 
     in_process := make(map[uint32]chan[ICMPPacket])
     m := new(sync.RWMutex())

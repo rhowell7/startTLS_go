@@ -13,14 +13,28 @@ import (
     // go get -u golang.org/x/net/ipv4
     "golang.org/x/net/icmp"
     "log"
-    // "os"
+    "os"
     // "reflect"
+    "sync"
 )
+
+type ICMPPacket struct {
+    valid       bool
+    // TargetIPv4  net.IP
+    // ReachedIPv4 net.Addr
+    TargetIPv4  string
+    ReachedIPv4 string
+    Data        string
+}
 
 func main() {
     //---------------------------- Set up ------------------------------//
-    // workers := 10 // number of threads, should be a flag
-
+    workers := 10 // number of threads, should be a flag // ./smtp --workers 10
+    minTTL := 10
+    maxTTL := 26
+    w := new(sync.WaitGroup)
+    input_chan := make(chan string, workers*2)
+    icmp_chan := make(chan ICMPPacket, workers*2)
 
     
     //------------------- Build the queue of IP Addresses --------------------//
@@ -30,30 +44,127 @@ func main() {
     }
     defer file.Close() // closes file
 
-    ipAddresses := make(chan string)
     scanner := bufio.NewScanner(file)
     
-    // in a goroutine
-    // for scanner.Scan() {
-    //     fmt.Println(scanner.Text())
-    //     tmp := string(scanner.Text())
-    //     fmt.Println(tmp)
-    //     fmt.Println(reflect.TypeOf(tmp))
-    //     ipAddresses <- tmp
-    //     fmt.Println("read one IP")
-    // }
-    // close(ipAddresses) // closes chan (for range() will stop when this chan closes)
+    // Input goroutine: put IP addresses into input_chan
+    w.Add(1)
+    go func() {
+        defer w.Done()
+        for scanner.Scan() {
+            fmt.Println(scanner.Text())
+            ip := string(scanner.Text())
+            // fmt.Println(ip)
+            // fmt.Println(reflect.TypeOf(ip)) // string
+            input_chan <- ip
+            // fmt.Println("Put one IP into input_chan")
+        }
+        close(input_chan) // closes chan (for range() will stop when this chan closes)
     
-    fmt.Println("Done reading in IP Addresses\n")
+        fmt.Println("Done reading in IP Addresses\n")
 
-    if err := scanner.Err(); err != nil {
-        log.Fatal(err)
-    }
+        // if err := scanner.Err(); err != nil {
+        //     log.Fatal(err)
+        // }
+    }() // Input goroutine
 
     fmt.Println("scanner read in ip addresses:\n")
-    for i := 0; i < len(ipAddresses); i++ {
-        fmt.Println(<-ipAddresses)
+    for i := 0; i < len(input_chan); i++ {
+        fmt.Println(<-input_chan)
     }
+
+
+    //----------------------- Create the ICMP Listener -----------------------//
+    w.Add(1)
+    go func() {
+        defer w.Done()
+        icmp_conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+        if err != nil {
+            log.Fatal(err)
+        }
+        x := 8
+        for {
+            rb := make([]byte, 10000)
+            n, peer, err := icmp_conn.ReadFrom(rb)
+            if err != nil {
+                if err, ok := err.(net.Error); ok && err.Timeout() {
+                    fmt.Printf("%v\t*\n", 3)
+                    continue
+                }
+                log.Fatal(err)
+            }
+
+            icmp_packet := rb[:n]
+
+            rm, err := icmp.ParseMessage(1, icmp_packet)
+
+            if err != nil {
+                fmt.Println("fatal error parsing ICMP message")
+                log.Fatal(err)
+            }
+            switch rm.Type {
+            case ipv4.ICMPTypeTimeExceeded:
+                // fmt.Printf("peer: %v\n", peer)
+                body := rm.Body.(*icmp.TimeExceeded)
+                text := string(body.Data)
+
+                // fmt.Println("Parsing rb[x:], where x = ", x)
+                header, err := ipv4.ParseHeader(rb[x:])
+                if err != nil {
+                    fmt.Println("fatal error parsing ICMP message: icmp_header")
+                    log.Fatal(err)
+                }
+                fmt.Println("TARGET: icmp_packet.Dst: ", header.Dst)
+                fmt.Println("REACHED: peer: ", peer)
+                fmt.Print("DATA: ")
+
+                // icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.To4(), ReachedIPv4: peer.(*net.TCPAddr).IP.To4(), valid: true}
+                icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), ReachedIPv4: peer.(*net.TCPAddr).IP.String(), valid: true}
+
+
+                icmp_extensions := body.Extensions
+                if len(text) > 52 {
+                    fmt.Println("ICMP response: ", string(text[52:]))
+                    fmt.Println("ICMP extensions: ", icmp_extensions)
+                    icmp_parsed.Data = text[52:]
+                } else {
+                    fmt.Println("Peer did not include a response :(")
+                }
+                icmp_chan <- icmp_parsed
+            // case ipv4.ICMPTypeEchoReply:
+            //     // icmp_chan <- "echo"
+            //     names, _ := net.LookupAddr(peer.String())
+            //     fmt.Println("\t%v %+v \n\t%+v", peer, names, rm)
+            //     fmt.Println("195: got an echo reply")
+            //     // return // kill this goroutine, & defer'd still runs
+            default:
+                // log.Printf("unknown ICMP message: %+v\n", rm)
+                fmt.Println("ICMP response unknown/default/other")
+                default_icmp_packet := ICMPPacket{valid: false}
+                icmp_chan <- default_icmp_packet
+            } //  switch
+        } // for
+    }() // ICMP Listener
+
+
+    //--------------------------- ICMP Dispatcher ----------------------------//
+    in_process := make(map[string](chan ICMPPacket))
+    m := new(sync.RWMutex)
+    w.Add(1)
+    go func() {
+        // Dispatch packets to scanners
+        defer w.Done()
+        for packet := range icmp_chan {
+            m.Lock() // lock accesses to in_process map
+            defer m.Unlock()
+            target := packet.TargetIPv4 // grab the target IP from the parsed ICMP 
+            if c, ok := in_process[target]; ok { // if we have a worker for that target
+                in_process[target] <- packet // tell the worker we got that packet
+            }
+        }
+    }() // ICMP Dispatcher
+
+
+
 
 
     // -------TODO: get the next IP address from a global queue ---------------------//
@@ -67,8 +178,10 @@ func main() {
     // target := "128.32.78.14:25"
     // target := "131.193.46.40:25" // dial timeout
 
-    minTTL := 10
-    maxTTL := 26
+
+
+    
+
 
     //------------------------- Open the connection --------------------------//
     fmt.Println("Attempting connection to: ", target)
@@ -149,60 +262,7 @@ func main() {
     // }
 
 
-    //----------------------- Create the ICMP Listener -----------------------//
-    icmp_chan := make(chan string)
-    go func() {
-        icmp_conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-        if err != nil {
-            log.Fatal(err)
-        }
-        for {
-            fmt.Println("160")
-            rb := make([]byte, 15000)
-            fmt.Println("161: in ICMP listener")
-            n, peer, err := icmp_conn.ReadFrom(rb)
-            fmt.Println("164")
-            if err != nil {
-                if err, ok := err.(net.Error); ok && err.Timeout() {
-                    fmt.Printf("%v\t*\n", 3)
-                    continue
-                }
-                fmt.Println("170")
-                log.Fatal(err)
-            }
-            fmt.Println("173")
-            rm, err := icmp.ParseMessage(1, rb[:n])
-            fmt.Println("175")
-            if err != nil {
-                fmt.Println("fatal error parsing ICMP message")
-                log.Fatal(err)
-            }
-            fmt.Println("180")
-            switch rm.Type {
-            case ipv4.ICMPTypeTimeExceeded:
-                fmt.Printf("peer: %v\n", peer)
-                body := rm.Body.(*icmp.TimeExceeded)
-                text := string(body.Data)
-                if len(text) > 52 {
-                    fmt.Println("ICMP response: ", string(text[52:]))
-                } else {
-                    fmt.Println("Peer did not include a response :(")
-                }
-                icmp_chan <- "ttl_expired"
-            case ipv4.ICMPTypeEchoReply:
-                icmp_chan <- "echo"
-                names, _ := net.LookupAddr(peer.String())
-                fmt.Println("\t%v %+v \n\t%+v", peer, names, rm)
-                fmt.Println("195: got an echo reply")
-                // return // kill this goroutine, & defer'd still runs
-            default:
-                // log.Printf("unknown ICMP message: %+v\n", rm)
-                fmt.Println("ICMP response unknown/default/other")
-                icmp_chan <- "unknown"
-            }
-        }
-    }()
-
+    
     //--------------------- Send magic StartTLS packets ----------------------//
     // Make a new ipv4 connection from the original one
     startTlsConn := ipv4.NewConn(conn)

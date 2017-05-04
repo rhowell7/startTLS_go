@@ -11,6 +11,4 @@ best order for completion?
 3. create worker threads to pull IPs from the input_chan
 
 
-anything else? will this run on zmap?
-
 
