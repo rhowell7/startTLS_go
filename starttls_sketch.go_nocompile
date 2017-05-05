@@ -99,23 +99,25 @@ func placeholder() {
 
                     conn := net.Dial(ip)
 
-                    // Speak everything up to starttls, go to next loop iteration over input_chan if there's an error
+                    // Speak everything up to starttls
+                    // go to next loop iteration over input_chan if there's an error????????????
                     // Now STARTTLS
                     tcpResponseChan chan bool
                     hostTimeoutChan chan bool 
-                    go func() {
+                    go func() { // TCP Listener
                         res, err := ReadNormalStartTLSAnswerWithMaxTimeout(conn)
                         if err != nil {
                             tcpResponseChan <- res      
                         }
                         hostTimeoutChan <- true
-                    }()
+                    }() // TCP Listener
+
                     hostDone := false
                     ttlCount := 0
                     for ttl := 0; ttl < MAX_TTL && !hostDone; ttl++ {
                         SendWithTTL(conn, ttl)
                         hopDone := false
-                        timeoutChan := GoStdlibFunctionToSendASignalInNSecond(2)
+                        timeoutChan := GoStdlibFunctionToSendASignalInNSecond(2)// case <-time.After(5 * time.Minute):
                         for !hopDone && !hostDone {
                             select {
                                 case  icmpEcho <- c:
@@ -124,7 +126,7 @@ func placeholder() {
                                     // check for censorship in echo'd response
                                 case tcpOk <- tcpResponseChan:
                                     hostDone = true
-                                    ttlCount = ttl    
+                                    ttlCount = ttl
                                 case _ <- timeoutChan:
                                     hopDone = true
                                     continue
@@ -149,10 +151,10 @@ func placeholder() {
                     //     timeout on both
                     // - try the next ttl or mark as done, etc.
   //              }
-            }
+            } // for ip := range input_chan
             close(c)
-        }(c)
-    }
+        }(c) // Worker goroutine
+    } // for worker < workers
     w.Wait()
 }
 
