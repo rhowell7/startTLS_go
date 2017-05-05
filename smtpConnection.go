@@ -121,7 +121,8 @@ func main() {
                 fmt.Print("DATA: ")
 
                 // icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.To4(), ReachedIPv4: peer.(*net.TCPAddr).IP.To4(), Valid: true}
-                icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), ReachedIPv4: peer.(*net.TCPAddr).IP.String(), Valid: true}
+                // icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), ReachedIPv4: peer.(*net.TCPAddr).IP.String(), Valid: true}
+                icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), ReachedIPv4: peer.(*net.IPAddr).IP.String(), Valid: true}
 
 
                 icmp_extensions := body.Extensions
@@ -331,18 +332,24 @@ func main() {
 
                     for !hopDone && !hostDone {
                         select {
-                            case <- c:
+                            case icmpPkt := <- c:
                                 // got an icmp packet
                                 hopDone = true
                                 // check for censorship in echo'd response
-                            case <- tcpResponseChan:
+                                fmt.Println("case icmpPkt: icmpPkt.Data: ", icmpPkt.Data)
+                                continue
+                            case tcpBytes := <- tcpResponseChan:
                                 hostDone = true
+                                fmt.Println("case tcpBytes: ", tcpBytes)
+                                break
                                 // ttlCount = ttl
-                            case <-time.After(3 * time.Second):
+                            case <-time.After(1 * time.Second):
                                 hopDone = true
                                 continue
-                            case <- hostTimeoutChan:
+                            // case <- hostTimeoutChan:
+                            case <-time.After(25 * time.Second):
                                 hostDone = true
+                                break
 
                         } // select
                     }
