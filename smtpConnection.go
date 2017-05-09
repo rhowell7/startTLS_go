@@ -17,6 +17,7 @@ import (
     // "reflect"
     "sync"
     "flag"
+    "strings"
 )
 
 type ICMPPacket struct {
@@ -26,6 +27,7 @@ type ICMPPacket struct {
     TargetIPv4  string
     ReachedIPv4 string
     Data        string
+    // TTL         int
 }
 
 func main() {
@@ -54,7 +56,7 @@ func main() {
     go func() {
         defer w.Done()
         for scanner.Scan() {
-            fmt.Println(scanner.Text())
+            // fmt.Println("57: Putting IP into input_chan: ", scanner.Text()) // fmt.Println(scanner.Text())
             ip := string(scanner.Text())
             // fmt.Println(ip)
             // fmt.Println(reflect.TypeOf(ip)) // string
@@ -63,17 +65,17 @@ func main() {
         }
         close(input_chan) // closes chan (for range() will stop when this chan closes)
     
-        fmt.Println("Done reading in IP Addresses\n")
+        // fmt.Println("Done reading in IP Addresses\n")
 
         // if err := scanner.Err(); err != nil {
         //     log.Fatal(err)
         // }
     }() // Input goroutine
 
-    fmt.Println("scanner read in ip addresses:\n")
-    for i := 0; i < len(input_chan); i++ {
-        fmt.Println(<-input_chan)
-    }
+    // fmt.Println("scanner read in ip addresses:")
+    // for i := 0; i < len(input_chan); i++ {
+    //     fmt.Println(<-input_chan)
+    // }
 
 
     //----------------------- Create the ICMP Listener -----------------------//
@@ -116,22 +118,25 @@ func main() {
                     fmt.Println("fatal error parsing ICMP message: icmp_header")
                     log.Fatal(err)
                 }
-                fmt.Println("TARGET: icmp_packet.Dst: ", header.Dst)
-                fmt.Println("REACHED: peer: ", peer)
-                fmt.Print("DATA: ")
+                // fmt.Println("TARGET: icmp_packet.Dst: ", header.Dst)
+                // fmt.Println("REACHED: peer: ", peer)
+                // fmt.Print("DATA: ")
+
 
                 // icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.To4(), ReachedIPv4: peer.(*net.TCPAddr).IP.To4(), Valid: true}
                 // icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), ReachedIPv4: peer.(*net.TCPAddr).IP.String(), Valid: true}
                 icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), ReachedIPv4: peer.(*net.IPAddr).IP.String(), Valid: true}
 
 
-                icmp_extensions := body.Extensions
+                // icmp_extensions := body.Extensions
                 if len(text) > 52 {
-                    fmt.Println("ICMP response: ", string(text[52:]))
-                    fmt.Println("ICMP extensions: ", icmp_extensions)
+                    // fmt.Print("Hop", ttl, ": ", peer)
+                    // fmt.Println(peer)
+                    // fmt.Println("\tICMP response: ", string(text[52:]))
+                    // fmt.Println("ICMP extensions: ", icmp_extensions)
                     icmp_parsed.Data = text[52:]
                 } else {
-                    fmt.Println("Peer did not include a response :(")
+                    // fmt.Println("Peer did not include a response :(")
                 }
                 icmp_chan <- icmp_parsed
             // case ipv4.ICMPTypeEchoReply:
@@ -140,13 +145,14 @@ func main() {
             //     fmt.Println("\t%v %+v \n\t%+v", peer, names, rm)
             //     fmt.Println("195: got an echo reply")
             //     // return // kill this goroutine, & defer'd still runs
-            default:
-                // log.Printf("unknown ICMP message: %+v\n", rm)
-                fmt.Println("ICMP response unknown/default/other")
-                default_icmp_packet := ICMPPacket{Valid: false}
-                icmp_chan <- default_icmp_packet
+            // default:
+            //     // log.Printf("unknown ICMP message: %+v\n", rm)
+            //     fmt.Println("ICMP response unknown/default/other")
+            //     default_icmp_packet := ICMPPacket{Valid: false}
+            //     icmp_chan <- default_icmp_packet
             } //  switch
         } // for
+        close(icmp_chan)
     }() // ICMP Listener
 
 
@@ -158,8 +164,9 @@ func main() {
         // Dispatch packets to scanners
         defer w.Done()
         for packet := range icmp_chan {
-            m.Lock() // lock accesses to in_process map
-            defer m.Unlock()
+            // TODO: This lock was causing problems... Do we need it?????? ???????????
+            // m.Lock() // lock accesses to in_process map
+            // defer m.Unlock()
             target := packet.TargetIPv4 // grab the target IP from the parsed ICMP 
             if _, ok := in_process[target]; ok { // if we have a worker for that target
                 in_process[target] <- packet // tell the worker we got that packet
@@ -197,42 +204,54 @@ func main() {
         go func(c chan ICMPPacket) {
             defer w.Done()
             for ip := range input_chan {
+                // fmt.Println("201: Getting new IP Address")
                 //------------- Get an IP Address from input_chan ------------//
                 m.Lock()
+                // fmt.Println("204")
                 in_process[ip] = c
+                // fmt.Println("206")
                 m.Unlock()
+                // fmt.Println("208")
                 defer func() {
+                    // fmt.Println("210")
                     m.Lock()
+                    // fmt.Println("212")
                     delete(in_process, ip)
+                    // fmt.Println("214")
                     m.Unlock()
+                    // fmt.Println("216")
                 }()
 
                 target := ip+":25"
-                // fmt.Println("target: ")
+                fmt.Print("\nTarget: ", ip)
 
                 //------------------------ Open the connection -----------------------//
-                fmt.Println("Attempting connection to: ", target)
-                timeOut := time.Duration(5) * time.Second
+                // fmt.Println("\n\nTarget: ", target)
+                timeOut := time.Duration(3) * time.Second
                 // Dial: returns a new Client connected to a server at addr
                 // conn, err := net.Dial("tcp", target)
                 conn, err := net.DialTimeout("tcp", target, timeOut)
                 if err != nil {
-                    fmt.Println("dial error:", err)
-                    return
+                    fmt.Println("\ndial error:", err)
+                    // conn.Close()
+                    // break
+                    // return
+                    continue
                 }
-                defer fmt.Println("Closing Connection, test")
+                // defer fmt.Println("Closing Connection, test")
                 defer conn.Close()
                 
                 // Wait for 220 banner
                 banner, err := bufio.NewReader(conn).ReadString('\n')
-                fmt.Println(banner)
+                // fmt.Println(banner)
 
                 // Are we being greylisted/blacklisted?
                 bannerGood, err := regexp.MatchString("220 ", string(banner))
 
                 if !bannerGood {
-                    fmt.Println("This server did not give us a good banner: ", target)
-                    return
+                    fmt.Println("\nThis server did not give us a good banner: ", target)
+                    // return
+                    continue
                 }
 
                 //---------------------- Send EHLO, receive Extensions -------------------//
@@ -248,7 +267,7 @@ func main() {
                         break
                     }
 
-                    fmt.Printf("%s", extensions)
+                    // fmt.Printf("%s", extensions)
 
                     matched, err := regexp.MatchString("250 ", string(extensions))
                     if matched {
@@ -260,8 +279,8 @@ func main() {
                     // 500 5.5.1 Command unrecognized: "XXXX ME"
                     ehloError, err := regexp.MatchString("500 ", string(extensions))
                     if ehloError {
-                        fmt.Println("got a 500 error: ", string(extensions))
-                        fmt.Println("Sending 'HELO' instead")
+                        // fmt.Println("got a 500 error: ", string(extensions))
+                        // fmt.Println("Sending 'HELO' instead")
                         conn.Write([]byte("HELO ME\r\n"))
                     }
                 } // for
@@ -294,18 +313,38 @@ func main() {
                 tcpResponseChan := make(chan []byte)
                 hostTimeoutChan := make(chan bool)
 
-                go func() { // TCP Listener
-                    timeoutDuration := 5 * time.Second
-                    bufReader := bufio.NewReader(conn)
-                    conn.SetReadDeadline(time.Now().Add(timeoutDuration))
-                    res, err := bufReader.ReadBytes('\n')
-                    // res, err := ReadNormalStartTLSAnswerWithMaxTimeout(conn)
-                    if err != nil {
-                        fmt.Println(err)
+                //--------------------- TCP Listener -------------------------//
+                // w.Add(1)
+                // go func() { // TCP Listener
+                //     defer w.Done()
+                //     timeoutDuration := 5 * time.Second
+                //     bufReader := bufio.NewReader(conn)
+                //     conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+                //     res, err := bufReader.ReadBytes('\n')
+                //     // res, err := ReadNormalStartTLSAnswerWithMaxTimeout(conn)
+                //     if err != nil {
+                //         fmt.Println(err)
+                //         hostTimeoutChan <- true
+                //     }
+                //     tcpResponseChan <- res
+                // }() // TCP Listener
+
+                //--- Listen for a TLS response ---//
+                w.Add(1)
+                go func() {
+                    defer w.Done()
+                    tlsResponse, err := bufReader.ReadBytes('\n')
+                    if err != nil { // if there's an error
+                        fmt.Println()
+                        // break
                         hostTimeoutChan <- true
                     }
-                    tcpResponseChan <- res
-                }() // TCP Listener
+                    // fmt.Print("Got TCP response:\t")
+                    // fmt.Println(string(tlsResponse))
+                    tcpResponseChan <- tlsResponse
+                }()
+
+
 
                 hostDone := false
                 // ttlCount := 0
@@ -326,21 +365,38 @@ func main() {
                     startTlsConn.SetTTL(ttl)
                     // fmt.Fprintf(startTlsConn, "STARTTLS\r\n") // send packet
                     startTlsConn.Write([]byte("STARTTLS\r\n"))
-                    fmt.Println("\nSent STARTTLS packet with TTL: ", ttl)
+                    // fmt.Println("\n\nSent STARTTLS packet with TTL: ", ttl)
+                    // fmt.Print("Hop ", ttl, ": ")
                     hopDone := false
 
 
                     for !hopDone && !hostDone {
                         select {
                             case icmpPkt := <- c:
+                            // case <- c:
                                 // got an icmp packet
                                 hopDone = true
+                                fmt.Print("Hop ", ttl, ": ", icmpPkt.ReachedIPv4)
+                                // fmt.Println("\tICMP Packet: ", icmpPkt.Data)
+                                fmt.Println("\tICMP Packet: ", strings.Replace(icmpPkt.Data, "\n", "", -1))
+
                                 // check for censorship in echo'd response
-                                fmt.Println("case icmpPkt: icmpPkt.Data: ", icmpPkt.Data)
+                                // fmt.Println("case icmpPkt: icmpPkt.Data: ", icmpPkt.Data)
                                 continue
                             case tcpBytes := <- tcpResponseChan:
                                 hostDone = true
-                                fmt.Println("case tcpBytes: ", tcpBytes)
+                                hopDone = true
+                                // fmt.Println("case tcpBytes: ", tcpBytes)
+                                tcpResponse := string(tcpBytes)
+                                fmt.Print("Hop ", ttl, ": ")
+                                header, err := ipv4.ParseHeader(tcpBytes)
+                                if err != nil {
+                                    fmt.Println("Error parsing tcpResponse")
+                                    break
+                                }
+                                // fmt.Println("Got TCP response from: ")
+                                fmt.Print(header.Src)
+                                fmt.Println("\tTCP Response: ", tcpResponse)
                                 break
                                 // ttlCount = ttl
                             case <-time.After(1 * time.Second):
@@ -349,6 +405,7 @@ func main() {
                             // case <- hostTimeoutChan:
                             case <-time.After(25 * time.Second):
                                 hostDone = true
+                                fmt.Println("Host timed out after 25 seconds")
                                 break
 
                         } // select
