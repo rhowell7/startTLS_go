@@ -59,7 +59,7 @@ func placeholder() {
             }
             panic(err.Error()) // does this end/kill the program? yes
                 // do defer'd commands still run? probably not
-        }
+        } // for
         close(icmp_chan)
     }() // () means run this now // ICMP Listener
 
