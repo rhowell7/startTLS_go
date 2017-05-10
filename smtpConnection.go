@@ -334,7 +334,7 @@ func main() {
                                 hopDone = true
                                 hop_ip := icmpPkt.ReachedIPv4
                                 hop_response := strings.Replace(icmpPkt.Data, "\n", "", -1)
-                                // hop_response = strings.Replace(hop_response, "\r", "", -1)
+                                hop_response = strings.Replace(hop_response, "\u0000", "", -1)
 
 
                                 hop_result := Hop{IP: hop_ip, HopOutput: hop_response, Hop: ttl}
