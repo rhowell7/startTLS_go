@@ -190,3 +190,35 @@ func placeholder() {
 // for ip := range inputChan {
 //     DoTTLExperiment()
 // }
+
+
+
+
+type Hop struct {
+    IP         string `json:"ip,omitempty"`
+    HopOutput  string `json:"hop_output,omitempty"`
+    Hop        int    `json:"hop,omitempty"`
+}
+
+type Output struct {
+    Hops              []Hop  `json:"hops,omitempty"`
+    TargetIP          string `json:"target_ip,omitempty"`
+    Censored          bool   `json:"censored,omitempty"`
+    FirstCensoredHop  int    `json:"first_censored_hop,omitempty"`
+    FirstCensoredIP   string `json:"first_censored_ip,omitempty"`
+    LastUncensoredHop int    `json:"last_uncensored_hop,omitempty"`
+    LastUncensoredIP  string `json:"last_uncensored_ip,omitempty"`
+    TcpResponse       string `json:"tcp_response,omitempty"`
+}
+
+// TODO:
+// maybe new WaitGroup that's just for the output thread. after workers are done,
+// wait on that waitgroup
+
+// Done:
+// flag for --output-file
+// in Workers, remove printing and build the struct instead
+//     & send to output chan
+//     AFTER all workers are done, close output chan in main: close(output_chan)
+// add another go routine for outputting
+// output to file or stdout or both?
