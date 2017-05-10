@@ -58,6 +58,7 @@ func main() {
     minTTL := 10
     maxTTL := 26
     w := new(sync.WaitGroup)
+    wg := new(sync.WaitGroup)
     input_chan := make(chan string, workers*2)
     icmp_chan := make(chan ICMPPacket, workers*2)
     output_chan := make(chan Output, workers*2)
@@ -87,7 +88,7 @@ func main() {
 
     
     //--------- Goroutine to print the JSON results to file or stdout --------//
-    w.Add(1)
+    wg.Add(1)
     go func() {
         f, err := os.OpenFile(output_file, os.O_APPEND|os.O_WRONLY, 0600)
         if err != nil {
@@ -97,23 +98,27 @@ func main() {
         for out := range output_chan {
             b, e := json.Marshal(&out)
             if e == nil {
-                fmt.Println(string(b))
+                // fmt.Println(string(b))
                 if _, err = f.WriteString(string(b)); err != nil {
                     panic(err)
                 }
             }
         }
-        w.Done()
         fmt.Println("Output goroutine has finished")
+        wg.Done()
+        
     }()
 
 
     //----------------------- Create the ICMP Listener -----------------------//
     w.Add(1)
     go func() {
-        defer w.Done()
-        defer fmt.Println("ICMP Listener goroutine has finished")
+        // defer w.Done()
+        // defer fmt.Println("ICMP Listener goroutine has finished")
         icmp_conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+        icmp_duration := time.Duration(3) * time.Second
+        icmp_timeout := time.Now().Add(icmp_duration)
+        icmp_conn.SetReadDeadline(icmp_timeout)
         if err != nil {
             log.Fatal(err)
         }
@@ -124,7 +129,8 @@ func main() {
             if err != nil {
                 if err, ok := err.(net.Error); ok && err.Timeout() {
                     fmt.Printf("%v\t*\n", 3)
-                    continue
+                    // continue
+                    break
                 }
                 log.Fatal(err)
             }
@@ -163,6 +169,8 @@ func main() {
             //     icmp_chan <- default_icmp_packet
             } //  switch
         } // for
+        w.Done()
+        fmt.Println("ICMP Listener goroutine has finished")
         close(icmp_chan)
     }() // ICMP Listener
 
@@ -308,7 +316,7 @@ func main() {
                 }() // TCP Listener
 
                 hostDone := false
-                results := Output{TargetIP: target}
+                results := Output{TargetIP: ip}
 
                 // Make a new ipv4 connection from the original one
                 startTlsConn := ipv4.NewConn(conn)
@@ -342,14 +350,14 @@ func main() {
 
                                 hop_censored, _ := regexp.MatchString("XXX", hop_response)
                                 if hop_censored && results.FirstCensoredIP == "" {
-                                    fmt.Println("Found the first censored hop: ", ttl, ": ", hop_ip)
+                                    // fmt.Println("Found the first censored hop: ", ttl, ": ", hop_ip)
                                     results.FirstCensoredHop = ttl
                                     results.FirstCensoredIP = hop_ip
                                 }
 
                                 hop_uncensored, _ := regexp.MatchString("STARTTLS", hop_response)
                                 if hop_uncensored {
-                                    fmt.Println("Found an uncensored hop: ", ttl, ": ", hop_ip)
+                                    // fmt.Println("Found an uncensored hop: ", ttl, ": ", hop_ip)
                                     results.LastUncensoredHop = ttl
                                     results.LastUncensoredIP = hop_ip
                                 }
@@ -367,7 +375,7 @@ func main() {
 
                                 hop_censored, _ := regexp.MatchString("XXX", tcpResponse)
                                 if hop_censored && results.FirstCensoredIP == "" {
-                                    fmt.Println("Found the first censored hop: ", ttl, ": ", ip)
+                                    // fmt.Println("Found the first censored hop: ", ttl, ": ", ip)
                                     results.FirstCensoredHop = ttl
                                     results.FirstCensoredIP = ip
                                     results.TcpResponse = tcpResponse
@@ -395,8 +403,9 @@ func main() {
             close(c)
         }(c) // Worker goroutine
     } // for worker < workers
-    
     w.Wait()
     close(output_chan)
+    wg.Wait()
+    
 
 } // main
