@@ -117,7 +117,7 @@ func main() {
     w.Add(1)
     go func() {
         defer w.Done()
-        defer fmt.Println("Input goroutine has finished")
+        defer fmt.Println("\nInput goroutine has finished")
         for scanner.Scan() {
             ip := string(scanner.Text())
             input_chan <- ip
@@ -156,7 +156,7 @@ func main() {
         defer w.Done()
         // Receive ICMP packets
         icmp_conn, _ := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-        icmp_duration := time.Duration(5) * time.Second
+        icmp_duration := time.Duration(6) * time.Second
         icmp_timeout := time.Now().Add(icmp_duration)
         icmp_conn.SetReadDeadline(icmp_timeout)
 
@@ -180,14 +180,14 @@ func main() {
             // if err == io.Timeout {
             // if err.Timeout() == true {
             if err != nil {
-                fmt.Println("ICMP Listener got an error: ", err.Error())
+                fmt.Println("\nICMP Listener got an error: ", err.Error())
                 // sleep(1)
                 // continue
                 break
             }
             // panic(err.Error()) // 
         } // for
-        fmt.Println("Closing icmp_chan")
+        fmt.Println("ICMP Listener goroutine has finished; closing icmp_chan")
         close(icmp_chan)
     }() // () means run this now // ICMP Listener
 
