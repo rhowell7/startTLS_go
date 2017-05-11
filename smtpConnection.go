@@ -138,6 +138,7 @@ func main() {
             b, e := json.Marshal(&out)
             if e == nil {
                 // fmt.Println(string(b))
+                f.WriteString("\r\n")
                 if _, err = f.WriteString(string(b)); err != nil {
                     panic(err)
                 }
@@ -155,7 +156,7 @@ func main() {
         defer w.Done()
         // Receive ICMP packets
         icmp_conn, _ := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-        icmp_duration := time.Duration(45) * time.Second
+        icmp_duration := time.Duration(5) * time.Second
         icmp_timeout := time.Now().Add(icmp_duration)
         icmp_conn.SetReadDeadline(icmp_timeout)
 
@@ -167,6 +168,10 @@ func main() {
                 packet := ParseICMP(rb[0:n])
                 packet.ReachedIPv4 = peer.(*net.IPAddr).IP.String()
                 icmp_chan <- packet
+                
+                // Add time until timeout
+                icmp_timeout = time.Now().Add(icmp_duration)
+                icmp_conn.SetReadDeadline(icmp_timeout)
                 continue
             }
             if err == io.EOF {
@@ -174,11 +179,15 @@ func main() {
             }
             // if err == io.Timeout {
             // if err.Timeout() == true {
-            //     sleep(1)
-            //     continue
-            // }
-            panic(err.Error()) // 
+            if err != nil {
+                fmt.Println("ICMP Listener got an error: ", err.Error())
+                // sleep(1)
+                // continue
+                break
+            }
+            // panic(err.Error()) // 
         } // for
+        fmt.Println("Closing icmp_chan")
         close(icmp_chan)
     }() // () means run this now // ICMP Listener
 
