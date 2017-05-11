@@ -1,6 +1,7 @@
 package main
 
 // go build
+// sudo ./smtp
 // sudo ./smtp --input-file testIP.txt --output-file testOut.txt --workers 10
 
 import (
@@ -19,6 +20,7 @@ import (
     "flag"
     "strings"
     "encoding/json"
+    "io"
 )
 
 type ICMPPacket struct {
@@ -43,6 +45,43 @@ type Output struct {
     LastUncensoredHop int    `json:"last_uncensored_hop,omitempty"`
     LastUncensoredIP  string `json:"last_uncensored_ip,omitempty"`
     TcpResponse       string `json:"tcp_response,omitempty"`
+}
+
+func ParseICMP(rb []byte) ICMPPacket {
+    // fmt.Println("ParseICMP parsing: ", rb)
+    // Parse an ICMP packet
+    rm, err := icmp.ParseMessage(1, rb)
+    // rm, err := icmp.ParseMessage(58, rb)
+    if err != nil {
+        fmt.Println("fatal error parsing ICMP message")
+        log.Fatal(err)
+    }
+    // switch rm.Type {
+    // case ipv4.ICMPTypeTimeExceeded:
+    if rm.Type == ipv4.ICMPTypeTimeExceeded {
+        // fmt.Printf("Got a TTL-expired packet")
+        body := rm.Body.(*icmp.TimeExceeded)
+        text := string(body.Data)
+
+        // fmt.Println("Parsing rb[x:], where x = ", x)
+        header, err := ipv4.ParseHeader(rb[8:])
+        if err != nil {
+            fmt.Println("fatal error parsing ICMP message: icmp_header")
+            log.Fatal(err)
+        }
+
+        icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), Valid: true}
+
+        if len(text) > 52 {
+            icmp_parsed.Data = text[52:]
+        }
+        // icmp_chan <- icmp_parsed
+        return icmp_parsed
+    } else {
+        default_icmp_packet := ICMPPacket{Valid: false}
+        return default_icmp_packet
+    }
+
 }
 
 
@@ -112,67 +151,104 @@ func main() {
 
     //----------------------- Create the ICMP Listener -----------------------//
     w.Add(1)
-    go func() {
-        // defer w.Done()
-        // defer fmt.Println("ICMP Listener goroutine has finished")
-        icmp_conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-        icmp_duration := time.Duration(3) * time.Second
+    go func() { // ICMP Listener
+        defer w.Done()
+        // Receive ICMP packets
+        icmp_conn, _ := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+        icmp_duration := time.Duration(45) * time.Second
         icmp_timeout := time.Now().Add(icmp_duration)
         icmp_conn.SetReadDeadline(icmp_timeout)
-        if err != nil {
-            log.Fatal(err)
-        }
-        x := 8
+
+        rb := make([]byte, 10000)
         for {
-            rb := make([]byte, 10000)
+            // err, n := icmp_socket.Recv(rb)
             n, peer, err := icmp_conn.ReadFrom(rb)
-            if err != nil {
-                if err, ok := err.(net.Error); ok && err.Timeout() {
-                    fmt.Printf("%v\t*\n", 3)
-                    // continue
-                    break
-                }
-                log.Fatal(err)
+            if err == nil {
+                packet := ParseICMP(rb[0:n])
+                packet.ReachedIPv4 = peer.(*net.IPAddr).IP.String()
+                icmp_chan <- packet
+                continue
             }
-
-            icmp_packet := rb[:n]
-
-            rm, err := icmp.ParseMessage(1, icmp_packet)
-
-            if err != nil {
-                fmt.Println("fatal error parsing ICMP message")
-                log.Fatal(err)
+            if err == io.EOF {
+                break
             }
-            switch rm.Type {
-            case ipv4.ICMPTypeTimeExceeded:
-                // fmt.Printf("peer: %v\n", peer)
-                body := rm.Body.(*icmp.TimeExceeded)
-                text := string(body.Data)
-
-                // fmt.Println("Parsing rb[x:], where x = ", x)
-                header, err := ipv4.ParseHeader(rb[x:])
-                if err != nil {
-                    fmt.Println("fatal error parsing ICMP message: icmp_header")
-                    log.Fatal(err)
-                }
-
-                icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), ReachedIPv4: peer.(*net.IPAddr).IP.String(), Valid: true}
-
-                if len(text) > 52 {
-                    icmp_parsed.Data = text[52:]
-                }
-                icmp_chan <- icmp_parsed
-            // default:
-            //     // log.Printf("unknown ICMP message: %+v\n", rm)
-            //     fmt.Println("ICMP response unknown/default/other")
-            //     default_icmp_packet := ICMPPacket{Valid: false}
-            //     icmp_chan <- default_icmp_packet
-            } //  switch
+            // if err == io.Timeout {
+            // if err.Timeout() == true {
+            //     sleep(1)
+            //     continue
+            // }
+            panic(err.Error()) // 
         } // for
-        w.Done()
-        fmt.Println("ICMP Listener goroutine has finished")
         close(icmp_chan)
-    }() // ICMP Listener
+    }() // () means run this now // ICMP Listener
+
+    // w.Add(1)
+    // go func() {
+    //     // defer w.Done()
+    //     // defer fmt.Println("ICMP Listener goroutine has finished")
+    //     icmp_conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+    //     if err != nil {
+    //         log.Fatal(err)
+    //     }
+    //     icmp_duration := time.Duration(3) * time.Second
+    //     icmp_timeout := time.Now().Add(icmp_duration)
+    //     icmp_conn.SetReadDeadline(icmp_timeout)
+    //     if err != nil {
+    //         log.Fatal(err)
+    //     }
+    //     x := 8
+    //     for {
+    //         rb := make([]byte, 10000)
+    //         n, peer, err := icmp_conn.ReadFrom(rb)
+    //         if err != nil {
+    //             if err, ok := err.(net.Error); ok && err.Timeout() {
+    //                 // fmt.Printf("%v\t*\n", 3)
+    //                 // fmt.Print("*")
+    //                 // continue
+    //                 break
+    //             }
+    //             log.Fatal(err)
+    //         }
+
+    //         icmp_packet := rb[:n]
+
+    //         rm, err := icmp.ParseMessage(1, icmp_packet)
+
+    //         if err != nil {
+    //             fmt.Println("fatal error parsing ICMP message")
+    //             log.Fatal(err)
+    //         }
+    //         switch rm.Type {
+    //         case ipv4.ICMPTypeTimeExceeded:
+    //             // fmt.Printf("peer: %v\n", peer)
+    //             body := rm.Body.(*icmp.TimeExceeded)
+    //             text := string(body.Data)
+
+    //             // fmt.Println("Parsing rb[x:], where x = ", x)
+    //             header, err := ipv4.ParseHeader(rb[x:])
+    //             if err != nil {
+    //                 fmt.Println("fatal error parsing ICMP message: icmp_header")
+    //                 log.Fatal(err)
+    //             }
+
+    //             icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), ReachedIPv4: peer.(*net.IPAddr).IP.String(), Valid: true}
+
+    //             if len(text) > 52 {
+    //                 icmp_parsed.Data = text[52:]
+    //             }
+    //             icmp_chan <- icmp_parsed
+    //         // default:
+    //         //     // log.Printf("unknown ICMP message: %+v\n", rm)
+    //         //     fmt.Println("ICMP response unknown/default/other")
+    //         //     default_icmp_packet := ICMPPacket{Valid: false}
+    //         //     icmp_chan <- default_icmp_packet
+    //         } //  switch
+    //     } // for
+    //     _ = icmp_conn.Close()
+    //     w.Done()
+    //     fmt.Println("ICMP Listener goroutine has finished")
+    //     close(icmp_chan)
+    // }() // ICMP Listener
 
 
     //--------------------------- ICMP Dispatcher ----------------------------//
