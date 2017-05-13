@@ -23,6 +23,9 @@ import (
     "io"
 )
 
+var finished bool
+// finished = false
+
 type ICMPPacket struct {
     Valid       bool
     TargetIPv4  string
@@ -87,6 +90,7 @@ func ParseICMP(rb []byte) ICMPPacket {
 
 func main() {
     //------------------------------- Set up ---------------------------------//
+    finished = false
     var workers int
     var output_file string
     var input_file string
@@ -98,6 +102,7 @@ func main() {
     maxTTL := 26
     w := new(sync.WaitGroup)
     wg := new(sync.WaitGroup)
+    worker_group := new(sync.WaitGroup)
     input_chan := make(chan string, workers*2)
     icmp_chan := make(chan ICMPPacket, workers*2)
     output_chan := make(chan Output, workers*2)
@@ -123,6 +128,7 @@ func main() {
             input_chan <- ip
         }
         close(input_chan) // closes chan (for range() will stop when this chan closes)
+        
     }() // Input goroutine
 
     
@@ -175,19 +181,26 @@ func main() {
                 continue
             }
             if err == io.EOF {
+                fmt.Println(" got io.EOF")
                 break
             }
             // if err == io.Timeout {
             // if err.Timeout() == true {
             if err != nil {
-                fmt.Println("\nICMP Listener got an error: ", err.Error())
+                // fmt.Println("\nICMP Listener got an error: ", err.Error())
                 // sleep(1)
                 // continue
-                break
+                // break
+                if finished == true {
+                    fmt.Println(" got ICMP Listener error and finished == true")
+                    break
+                } else {
+                    continue
+                }
             }
             // panic(err.Error()) // 
         } // for
-        fmt.Println("ICMP Listener goroutine has finished; closing icmp_chan")
+        fmt.Println("\nICMP Listener goroutine has finished; closing icmp_chan")
         close(icmp_chan)
     }() // () means run this now // ICMP Listener
 
@@ -289,9 +302,11 @@ func main() {
 
     for worker := 0; worker < workers; worker++ {
         w.Add(1)
+        worker_group.Add(1)
         c := worker_channels[worker]
         go func(c chan ICMPPacket) {
             defer w.Done()
+            defer worker_group.Done()
             defer fmt.Println("Worker goroutine has finished")
             for ip := range input_chan {
                 //------------- Get an IP Address from input_chan ------------//
@@ -485,12 +500,22 @@ func main() {
                     } // for !hopDone && !hostDone
                 } // for ; ttl < maxTTL && !hostDone
             } // for ip := range input_chan
+            fmt.Println(" Closing c")
             close(c)
         }(c) // Worker goroutine
     } // for worker < workers
+    fmt.Println("waiting on worker_group")
+    worker_group.Wait()
+    fmt.Println("worker_group finished")
+    finished = true
+    fmt.Println("waiting on w")
     w.Wait()
+    fmt.Println("w finished")
     close(output_chan)
+    // finished = true
+    fmt.Println("waiting on wg")
     wg.Wait()
+    fmt.Println("wg finished")
     
 
 } // main
