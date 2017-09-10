@@ -10,12 +10,10 @@ import (
     "fmt"
     "time"
     "bufio"
-    "golang.org/x/net/ipv4"
-    // go get -u golang.org/x/net/ipv4
+    "golang.org/x/net/ipv4" // go get -u golang.org/x/net/ipv4
     "golang.org/x/net/icmp"
     "log"
     "os"
-    // "reflect"
     "sync"
     "flag"
     "strings"
@@ -24,7 +22,6 @@ import (
 )
 
 var finished bool
-// finished = false
 
 type ICMPPacket struct {
     Valid       bool
