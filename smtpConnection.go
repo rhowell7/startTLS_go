@@ -51,16 +51,13 @@ type Output struct {
 }
 
 func ParseICMP(rb []byte) ICMPPacket {
-    // fmt.Println("ParseICMP parsing: ", rb)
-    // Parse an ICMP packet
+    // Given bytes read from conn, parse and return the ICMP packet
     rm, err := icmp.ParseMessage(1, rb)
     // rm, err := icmp.ParseMessage(58, rb)
     if err != nil {
         fmt.Println("fatal error parsing ICMP message")
         log.Fatal(err)
     }
-    // switch rm.Type {
-    // case ipv4.ICMPTypeTimeExceeded:
     if rm.Type == ipv4.ICMPTypeTimeExceeded {
         // fmt.Printf("Got a TTL-expired packet")
         body := rm.Body.(*icmp.TimeExceeded)
@@ -78,7 +75,6 @@ func ParseICMP(rb []byte) ICMPPacket {
         if len(text) > 52 {
             icmp_parsed.Data = text[52:]
         }
-        // icmp_chan <- icmp_parsed
         return icmp_parsed
     } else {
         default_icmp_packet := ICMPPacket{Valid: false}
@@ -95,20 +91,24 @@ func main() {
     var output_file string
     var input_file string
     flag.IntVar(&workers, "workers", 1, "number of worker routines")
-    flag.StringVar(&output_file, "output-file", "results.txt", "File location to save output")
-    flag.StringVar(&input_file, "input-file", "ipAddresses.txt", "Input file should be a list of IP Addresses")
+    flag.StringVar(&output_file, "output-file", "results.txt",
+                   "File location to save output")
+    flag.StringVar(&input_file, "input-file", "ipAddresses.txt",
+                   "Input file should be a list of IP Addresses")
     flag.Parse()
     minTTL := 10
-    maxTTL := 26
+    maxTTL := 32
+    hopTimeout := 1
+    hostTimeout := 25
     w := new(sync.WaitGroup)
     wg := new(sync.WaitGroup)
     worker_group := new(sync.WaitGroup)
-    input_chan := make(chan string, workers*2)
+    input_chan := make(chan string, workers*2) // to read in IP addresses
     icmp_chan := make(chan ICMPPacket, workers*2)
     output_chan := make(chan Output, workers*2)
 
     
-    //------------------- Build the queue of IP Addresses --------------------//
+    //------------------ Build the queue of IP Addresses ---------------------//
     // fmt.Println("Opening input_file: ", input_file)
     file, err := os.Open(input_file)
     if err != nil {
@@ -127,8 +127,7 @@ func main() {
             ip := string(scanner.Text())
             input_chan <- ip
         }
-        close(input_chan) // closes chan (for range() will stop when this chan closes)
-        
+        close(input_chan) // close chan: for range() will stop when this closes
     }() // Input goroutine
 
     
@@ -152,7 +151,6 @@ func main() {
         }
         fmt.Println("Output goroutine has finished")
         wg.Done()
-        
     }()
 
 
@@ -184,13 +182,8 @@ func main() {
                 fmt.Println(" got io.EOF")
                 break
             }
-            // if err == io.Timeout {
-            // if err.Timeout() == true {
             if err != nil {
                 // fmt.Println("\nICMP Listener got an error: ", err.Error())
-                // sleep(1)
-                // continue
-                // break
                 if finished == true {
                     fmt.Println(" got ICMP Listener error and finished == true")
                     break
@@ -198,79 +191,11 @@ func main() {
                     continue
                 }
             }
-            // panic(err.Error()) // 
+            // panic(err.Error())
         } // for
         fmt.Println("\nICMP Listener goroutine has finished; closing icmp_chan")
         close(icmp_chan)
-    }() // () means run this now // ICMP Listener
-
-    // w.Add(1)
-    // go func() {
-    //     // defer w.Done()
-    //     // defer fmt.Println("ICMP Listener goroutine has finished")
-    //     icmp_conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-    //     if err != nil {
-    //         log.Fatal(err)
-    //     }
-    //     icmp_duration := time.Duration(3) * time.Second
-    //     icmp_timeout := time.Now().Add(icmp_duration)
-    //     icmp_conn.SetReadDeadline(icmp_timeout)
-    //     if err != nil {
-    //         log.Fatal(err)
-    //     }
-    //     x := 8
-    //     for {
-    //         rb := make([]byte, 10000)
-    //         n, peer, err := icmp_conn.ReadFrom(rb)
-    //         if err != nil {
-    //             if err, ok := err.(net.Error); ok && err.Timeout() {
-    //                 // fmt.Printf("%v\t*\n", 3)
-    //                 // fmt.Print("*")
-    //                 // continue
-    //                 break
-    //             }
-    //             log.Fatal(err)
-    //         }
-
-    //         icmp_packet := rb[:n]
-
-    //         rm, err := icmp.ParseMessage(1, icmp_packet)
-
-    //         if err != nil {
-    //             fmt.Println("fatal error parsing ICMP message")
-    //             log.Fatal(err)
-    //         }
-    //         switch rm.Type {
-    //         case ipv4.ICMPTypeTimeExceeded:
-    //             // fmt.Printf("peer: %v\n", peer)
-    //             body := rm.Body.(*icmp.TimeExceeded)
-    //             text := string(body.Data)
-
-    //             // fmt.Println("Parsing rb[x:], where x = ", x)
-    //             header, err := ipv4.ParseHeader(rb[x:])
-    //             if err != nil {
-    //                 fmt.Println("fatal error parsing ICMP message: icmp_header")
-    //                 log.Fatal(err)
-    //             }
-
-    //             icmp_parsed := ICMPPacket{TargetIPv4: header.Dst.String(), ReachedIPv4: peer.(*net.IPAddr).IP.String(), Valid: true}
-
-    //             if len(text) > 52 {
-    //                 icmp_parsed.Data = text[52:]
-    //             }
-    //             icmp_chan <- icmp_parsed
-    //         // default:
-    //         //     // log.Printf("unknown ICMP message: %+v\n", rm)
-    //         //     fmt.Println("ICMP response unknown/default/other")
-    //         //     default_icmp_packet := ICMPPacket{Valid: false}
-    //         //     icmp_chan <- default_icmp_packet
-    //         } //  switch
-    //     } // for
-    //     _ = icmp_conn.Close()
-    //     w.Done()
-    //     fmt.Println("ICMP Listener goroutine has finished")
-    //     close(icmp_chan)
-    // }() // ICMP Listener
+    }() // ICMP Listener
 
 
     //--------------------------- ICMP Dispatcher ----------------------------//
@@ -293,8 +218,7 @@ func main() {
     }() // ICMP Dispatcher
 
 
-
-    //------------------------------ Worker Goroutine ------------------------//
+    //----------------------------- Worker Goroutine -------------------------//
     worker_channels := make([]chan ICMPPacket, workers)
     for idx := range worker_channels {
         worker_channels[idx] = make(chan ICMPPacket, 1)
@@ -309,7 +233,7 @@ func main() {
             defer worker_group.Done()
             defer fmt.Println("Worker goroutine has finished")
             for ip := range input_chan {
-                //------------- Get an IP Address from input_chan ------------//
+                //------------ Get an IP Address from input_chan -------------//
                 m.Lock()
                 in_process[ip] = c
                 m.Unlock()
@@ -322,7 +246,7 @@ func main() {
                 target := ip+":25"
                 fmt.Print("\nTarget: ", ip)
 
-                //-------------------- Open the connection -------------------//
+                //------------------ Open the SMTP connection ----------------//
                 timeOut := time.Duration(3) * time.Second
                 conn, err := net.DialTimeout("tcp", target, timeOut)
                 if err != nil {
@@ -339,7 +263,8 @@ func main() {
                 bannerGood, err := regexp.MatchString("220 ", string(banner))
 
                 if !bannerGood {
-                    fmt.Println("\nThis server did not give us a good banner: ", target)
+                    fmt.Println("\nThis server did not give us a good banner: ",
+                                 target)
                     fmt.Println(banner)
                     continue
                 }
@@ -356,8 +281,8 @@ func main() {
                     }
                     // fmt.Printf("%s", extensions)
 
-                    matched, err := regexp.MatchString("250 ", string(extensions))
-                    if matched {
+                    done, err := regexp.MatchString("250 ", string(extensions))
+                    if done {
                         // Extensions start with 250-, except the last one is just 250
                         // fmt.Println("Found the last extension\n")
                         fmt.Println()
@@ -374,29 +299,6 @@ func main() {
                 } // for (receiving extensions)
 
 
-                // //----------------- Test Regular STARTTLS request ---------------------//
-                // fmt.Println("Sending STARTTLS")
-                // conn.Write([]byte("STARTTLS\r\n"))
-                // tlsResponse, err := bufio.NewReader(conn).ReadBytes('\n')
-                // fmt.Println(string(tlsResponse))
-                // // fmt.Println(err)
-
-                // starttlsGood, err := regexp.MatchString("220 ", string(tlsResponse))
-                // starttlsBad, err := regexp.MatchString("500 ", string(tlsResponse))
-
-                // if starttlsGood {
-                //     fmt.Println("This server is good to start TLS: ", target)
-                // } else if starttlsBad {
-                //     fmt.Println("This server is unable to start TLS: ", target)
-                // } else {
-                //     fmt.Println("Response did not contain 220 or 500, trying again")
-                //     conn.Write([]byte("STARTTLS\n"))
-                //     tlsResponse, err = bufio.NewReader(conn).ReadBytes('\n')
-                //     fmt.Println(string(tlsResponse))
-                // }
-
-
-                
             //----------------- Send magic StartTLS packets ------------------//
                 tcpResponseChan := make(chan []byte)
                 hostTimeoutChan := make(chan bool)
@@ -418,7 +320,7 @@ func main() {
                 hostDone := false
                 results := Output{TargetIP: ip}
 
-                // Make a new ipv4 connection from the original one
+                // Fork a new ipv4 connection from the original one
                 startTlsConn := ipv4.NewConn(conn)
                 if err != nil {
                     fmt.Println("Forking conn error:", err)
@@ -450,14 +352,14 @@ func main() {
 
                                 hop_censored, _ := regexp.MatchString("XXX", hop_response)
                                 if hop_censored && results.FirstCensoredIP == "" {
-                                    // fmt.Println("Found the first censored hop: ", ttl, ": ", hop_ip)
+                                    // fmt.Println("First censored hop: ", ttl, ": ", hop_ip)
                                     results.FirstCensoredHop = ttl
                                     results.FirstCensoredIP = hop_ip
                                 }
 
                                 hop_uncensored, _ := regexp.MatchString("STARTTLS", hop_response)
                                 if hop_uncensored {
-                                    // fmt.Println("Found an uncensored hop: ", ttl, ": ", hop_ip)
+                                    // fmt.Println("Uncensored hop: ", ttl, ": ", hop_ip)
                                     results.LastUncensoredHop = ttl
                                     results.LastUncensoredIP = hop_ip
                                 }
@@ -475,7 +377,7 @@ func main() {
 
                                 hop_censored, _ := regexp.MatchString("XXX", tcpResponse)
                                 if hop_censored && results.FirstCensoredIP == "" {
-                                    // fmt.Println("Found the first censored hop: ", ttl, ": ", ip)
+                                    // fmt.Println("First censored hop: ", ttl, ": ", ip)
                                     results.FirstCensoredHop = ttl
                                     results.FirstCensoredIP = ip
                                     results.TcpResponse = tcpResponse
@@ -488,15 +390,15 @@ func main() {
                                 fmt.Print(ip)
                                 fmt.Println("\tTCP Response: ", tcpResponse)
                                 break
-                            case <-time.After(1 * time.Second):
+                            case <-time.After(hopTimeout * time.Second):
                                 hopDone = true
                                 continue
-                            case <-time.After(25 * time.Second):
+                            case <-time.After(hostTimeout * time.Second):
                                 hostDone = true
-                                fmt.Println("Host timed out after 25 seconds")
+                                fmt.Println("Host timed out")
                                 break
 
-                        } // select
+                        } // select: ICMP, TCP, or timeout?
                     } // for !hopDone && !hostDone
                 } // for ; ttl < maxTTL && !hostDone
             } // for ip := range input_chan
@@ -506,16 +408,16 @@ func main() {
     } // for worker < workers
     fmt.Println("waiting on worker_group")
     worker_group.Wait()
-    fmt.Println("worker_group finished")
+    fmt.Println("  worker_group finished")
     finished = true
     fmt.Println("waiting on w")
     w.Wait()
-    fmt.Println("w finished")
+    fmt.Println("  w finished")
     close(output_chan)
     // finished = true
     fmt.Println("waiting on wg")
     wg.Wait()
-    fmt.Println("wg finished")
+    fmt.Println("  wg finished")
     
 
 } // main
