@@ -7,7 +7,7 @@ The goal is to find certain IP Addresses that are blocking email encryption. Thi
 We use 3 main channels for communicating:
 `input_chan` reads in IP addresses from a file, workers take them out
 `icmp_chan` holds ICMPPacket objects that have already been parsed, and delivers them to their proper worker
-`output_chan` holds Output objects that contain the JSON-style data we want to know about each completed traceroute: number of hops, if it was censored, and which IP Address is blocking the encryption
+`output_chan` holds Output objects that contain the JSON-style data we want to know about each completed traceroute: number of hops, if it was censored, and which IP Address is blocking the encryption.
 
 The program flow goes roughly:
 1. Fill the `input_chan` with IP Addresses
@@ -24,6 +24,9 @@ The program flow goes roughly:
     5. Break when there are no more IP addresses in the `input_chan`
 
 ## How to use ##
+
+Requires `go`, and the following files: `smtpConnection.go`, `ipAddresses.txt` (or specify a different input file), and `results.txt` (or specify a different output file).
+
 Build it: `go build`
 
 Run default: `sudo ./smtp`
